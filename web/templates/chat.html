@@ -135,6 +135,7 @@
 							</div>
 							<div class="d-flex justify-content-between align-items-center">
 								<small id="tokenUsage" class="token-usage">Tokens: --</small>
+								<small id="sendStatus" class="token-usage" aria-live="polite"></small>
 								<button type="submit" class="btn btn-primary">Send</button>
 							</div>
 						</form>
@@ -150,6 +151,9 @@
 		const modelSelect = document.getElementById("modelSelect");
 		const tempRange = document.getElementById("tempRange");
 		const tempValue = document.getElementById("tempValue");
+		const sendStatus = document.getElementById("sendStatus");
+		let sendTimer = null;
+		let sendStart = 0;
 
 		function appendMessage(message) {
 			const bubble = document.createElement("div");
@@ -173,6 +177,15 @@
 			if (!content || !content.trim()) {
 				return;
 			}
+			sendStart = performance.now();
+			if (sendTimer) {
+				clearInterval(sendTimer);
+			}
+			sendStatus.textContent = "Waiting... 0.0s";
+			sendTimer = setInterval(() => {
+				const elapsed = (performance.now() - sendStart) / 1000;
+				sendStatus.textContent = `Waiting... ${elapsed.toFixed(1)}s`;
+			}, 100);
 			messageForm.querySelector("textarea").value = "";
 			const response = await fetch("/api/chat/{{ .Chat.Summary.ID }}/message", {
 				method: "POST",
@@ -184,6 +197,8 @@
 				})
 			});
 			if (!response.ok) {
+				clearInterval(sendTimer);
+				sendStatus.textContent = "Send failed";
 				return;
 			}
 			const payload = await response.json();
@@ -192,6 +207,8 @@
 			if (payload.usage) {
 				tokenUsage.textContent = `Tokens: ${payload.usage.prompt_tokens} prompt / ${payload.usage.completion_tokens} completion / ${payload.usage.total_tokens} total`;
 			}
+			clearInterval(sendTimer);
+			sendStatus.textContent = "";
 		});
 
 		tempRange.addEventListener("input", () => {
