@@ -1,0 +1,16 @@
+<script>
+	function updateLocalTimes() {
+		const elements = document.querySelectorAll("[data-utc]");
+		elements.forEach((element) => {
+			const value = element.dataset.utc;
+			if (!value) {
+				return;
+			}
+			const date = new Date(value);
+			if (!Number.isNaN(date.getTime())) {
+				element.textContent = date.toLocaleString();
+			}
+		});
+	}
+	document.addEventListener("DOMContentLoaded", updateLocalTimes);
+</script>
