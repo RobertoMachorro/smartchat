@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -64,6 +65,9 @@ func loadTemplates(rootDir string) *template.Template {
 	tmpl := template.New("").Funcs(template.FuncMap{
 		"formatUTC": func(value time.Time) string {
 			return value.UTC().Format(time.RFC3339)
+		},
+		"trimContent": func(value string) string {
+			return strings.TrimSpace(value)
 		},
 	})
 	template.Must(tmpl.ParseGlob(filepath.Join(rootDir, "web", "templates", "*.html")))

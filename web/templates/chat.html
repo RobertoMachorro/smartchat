@@ -24,9 +24,11 @@
 		.bubble {
 			padding: 12px 14px;
 			border-radius: 16px;
-			margin-bottom: 12px;
 			max-width: 75%;
 			white-space: pre-wrap;
+		}
+		.bubble + .bubble {
+			margin-top: 12px;
 		}
 		.bubble.user {
 			background: #dbeafe;
@@ -107,7 +109,7 @@
 							{{ if .Chat.Messages }}
 								{{ range .Chat.Messages }}
 									<div class="bubble {{ if eq .Role "user" }}user{{ else }}assistant{{ end }}">
-										<div>{{ .Content }}</div>
+										<div>{{ trimContent .Content }}</div>
 										<div class="bubble-meta mt-1" data-utc="{{ formatUTC .CreatedAt }}">{{ .CreatedAt }}</div>
 									</div>
 								{{ end }}
@@ -159,7 +161,7 @@
 			const bubble = document.createElement("div");
 			bubble.className = "bubble " + (message.role === "user" ? "user" : "assistant");
 			const content = document.createElement("div");
-			content.textContent = message.content;
+			content.textContent = (message.content || "").trim();
 			const meta = document.createElement("div");
 			meta.className = "bubble-meta mt-1";
 			meta.dataset.utc = message.createdAt;
