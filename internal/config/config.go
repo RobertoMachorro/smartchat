@@ -26,6 +26,7 @@ type Config struct {
 	RedisURL     string
 	SessionKey   string
 	InstanceName string
+	AllowedUsers []string
 	OAuthGoogle  OAuthConfig
 	OAuthGitHub  OAuthConfig
 	OpenAI       OpenAIConfig
@@ -44,6 +45,7 @@ func Load() (Config, error) {
 		RedisURL:     os.Getenv("REDIS_URL"),
 		SessionKey:   os.Getenv("SESSION_KEY"),
 		InstanceName: getEnv("INSTANCE_NAME", ""),
+		AllowedUsers: splitPipeList(os.Getenv("ALLOWED_USERS")),
 		OAuthGoogle: OAuthConfig{
 			ClientID:     os.Getenv("OAUTH_GOOGLE_CLIENT_ID"),
 			ClientSecret: os.Getenv("OAUTH_GOOGLE_CLIENT_SECRET"),
@@ -104,6 +106,21 @@ func splitCSV(value string) []string {
 		return nil
 	}
 	parts := strings.Split(value, ",")
+	var cleaned []string
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			cleaned = append(cleaned, trimmed)
+		}
+	}
+	return cleaned
+}
+
+func splitPipeList(value string) []string {
+	if value == "" {
+		return nil
+	}
+	parts := strings.Split(value, "|")
 	var cleaned []string
 	for _, part := range parts {
 		trimmed := strings.TrimSpace(part)

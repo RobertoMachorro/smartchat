@@ -68,6 +68,14 @@ func (h *Handler) RequireAuth(c *gin.Context) {
 		c.Abort()
 		return
 	}
+	if !h.isAllowedUser(h.userEmail(c)) {
+		c.HTML(http.StatusForbidden, "denied.html", gin.H{
+			"InstanceName": h.Config.InstanceName,
+			"UserEmail":    h.userEmail(c),
+		})
+		c.Abort()
+		return
+	}
 	c.Next()
 }
 
@@ -127,6 +135,17 @@ func (h *Handler) HandleOAuthCallback(provider auth.Provider) gin.HandlerFunc {
 		email, err := h.Auth.FetchEmail(c.Request.Context(), provider, token)
 		if err != nil {
 			c.String(http.StatusBadRequest, "failed to fetch email")
+			return
+		}
+		if !h.isAllowedUser(email) {
+			session.Values[sessionUserEmail] = ""
+			session.Values[sessionOAuthState] = ""
+			session.Values[sessionOAuthProvider] = ""
+			_ = session.Save(c.Request, c.Writer)
+			c.HTML(http.StatusForbidden, "denied.html", gin.H{
+				"InstanceName": h.Config.InstanceName,
+				"UserEmail":    email,
+			})
 			return
 		}
 		session.Values[sessionUserEmail] = email
@@ -409,4 +428,17 @@ func (h *Handler) updateSessionPreferences(c *gin.Context, model string, tempera
 	}
 	session.Values[sessionTemperature] = clampTemperature(temperature)
 	return session.Save(c.Request, c.Writer)
+}
+
+func (h *Handler) isAllowedUser(email string) bool {
+	if len(h.Config.AllowedUsers) == 0 {
+		return true
+	}
+	candidate := strings.ToLower(strings.TrimSpace(email))
+	for _, allowed := range h.Config.AllowedUsers {
+		if candidate == strings.ToLower(strings.TrimSpace(allowed)) {
+			return true
+		}
+	}
+	return false
 }

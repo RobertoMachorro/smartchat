@@ -22,6 +22,7 @@ OAUTH_GITHUB_REDIRECT_URL=http://localhost:8080/auth/github/callback
 OPENAI_API_BASE_URL=https://local-ai.local:32217/v1
 OPENAI_API_KEY=...
 OPENAI_API_MODELS=llama-3.2-1b-instruct:q8_0,another-model
+ALLOWED_USERS=person1@example.com|person2@example.com
 ```
 
 2. Run the server:
