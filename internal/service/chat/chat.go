@@ -112,6 +112,21 @@ func (s *Service) GetChat(ctx context.Context, userEmail, chatID string) (ChatVi
 	return ChatView{Summary: summary, Messages: messages}, nil
 }
 
+func (s *Service) DeleteChat(ctx context.Context, userEmail, chatID string) error {
+	if ok, err := s.verifyOwner(ctx, userEmail, chatID); err != nil {
+		return err
+	} else if !ok {
+		return fmt.Errorf("not authorized")
+	}
+	pipe := s.Redis.TxPipeline()
+	pipe.Del(ctx, chatMetaKey(chatID))
+	pipe.Del(ctx, chatMessagesKey(chatID))
+	pipe.Del(ctx, chatOwnerKey(chatID))
+	pipe.LRem(ctx, userChatsKey(userEmail), 0, chatID)
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
 func (s *Service) AppendMessage(ctx context.Context, userEmail, chatID, role, content string) (Message, error) {
 	if ok, err := s.verifyOwner(ctx, userEmail, chatID); err != nil {
 		return Message{}, err

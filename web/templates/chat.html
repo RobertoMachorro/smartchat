@@ -60,15 +60,38 @@
 		<div class="row g-3 chat-shell">
 			<div class="col-12 col-lg-3">
 				<div class="card h-100">
-					<div class="card-header">Chats</div>
+					<div class="card-header d-flex justify-content-between align-items-center">
+						<span>Chats</span>
+						<form method="post" action="/chat/new" class="m-0">
+							<button type="submit" class="btn btn-sm btn-outline-secondary" aria-label="New chat">
+								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+									<path d="M8 1.5a.5.5 0 0 1 .5.5v5.5H14a.5.5 0 0 1 0 1H8.5V14a.5.5 0 0 1-1 0V8.5H2a.5.5 0 0 1 0-1h5.5V2a.5.5 0 0 1 .5-.5z"/>
+								</svg>
+							</button>
+						</form>
+					</div>
 					<div class="card-body chat-list">
 						{{ if .Chats }}
 							<div class="list-group list-group-flush">
 								{{ range .Chats }}
-									<a class="list-group-item list-group-item-action {{ if eq $.Chat.Summary.ID .ID }}active{{ end }}" href="/chat/{{ .ID }}">
-										<div class="fw-semibold">{{ .Title }}</div>
-										<small class="text-muted" data-utc="{{ formatUTC .UpdatedAt }}">{{ .UpdatedAt }}</small>
-									</a>
+									<div class="list-group-item position-relative {{ if eq $.Chat.Summary.ID .ID }}active{{ end }}">
+										<div class="d-flex justify-content-between align-items-start">
+											<div>
+												<a class="stretched-link text-decoration-none {{ if eq $.Chat.Summary.ID .ID }}text-white{{ else }}text-body{{ end }}" href="/chat/{{ .ID }}">
+													<div class="fw-semibold">{{ .Title }}</div>
+													<small class="{{ if eq $.Chat.Summary.ID .ID }}text-white-50{{ else }}text-muted{{ end }}" data-utc="{{ formatUTC .UpdatedAt }}">{{ .UpdatedAt }}</small>
+												</a>
+											</div>
+											<form method="post" action="/chat/{{ .ID }}/delete" class="ms-2 position-relative z-1" onsubmit="return confirm('Delete this chat?');">
+												<button type="submit" class="btn btn-sm btn-outline-danger" aria-label="Delete chat">
+													<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16">
+														<path d="M5.5 5.5a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0v-6a.5.5 0 0 1 .5-.5zm2.5.5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0v-6zm3 .5a.5.5 0 0 1-1 0v6a.5.5 0 0 1 1 0v-6z"/>
+														<path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1 0-2H5.5l1-1h3l1 1H14a1 1 0 0 1 .5 1zM4 4v9a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4H4z"/>
+													</svg>
+												</button>
+											</form>
+										</div>
+									</div>
 								{{ end }}
 							</div>
 						{{ else }}
@@ -96,13 +119,7 @@
 							<div class="mb-2">
 								<textarea class="form-control" name="content" rows="3" placeholder="Ask something..."></textarea>
 							</div>
-							<div class="d-flex justify-content-between align-items-center">
-								<small id="tokenUsage" class="token-usage">Tokens: --</small>
-								<button type="submit" class="btn btn-primary">Send</button>
-							</div>
-						</form>
-						<form id="preferencesForm" class="mt-3" method="post" action="/api/preferences">
-							<div class="row g-2 align-items-end">
+							<div class="row g-2 align-items-end mb-2">
 								<div class="col-12 col-md-5">
 									<label class="form-label">Model</label>
 									<select class="form-select" name="model" id="modelSelect">
@@ -115,9 +132,10 @@
 									<label class="form-label">Temperature: <span id="tempValue">{{ printf "%.1f" .Temperature }}</span></label>
 									<input class="form-range" type="range" min="0.1" max="1.0" step="0.1" name="temperature" id="tempRange" value="{{ printf "%.1f" .Temperature }}">
 								</div>
-								<div class="col-12 col-md-2">
-									<button type="submit" class="btn btn-outline-secondary w-100">Save</button>
-								</div>
+							</div>
+							<div class="d-flex justify-content-between align-items-center">
+								<small id="tokenUsage" class="token-usage">Tokens: --</small>
+								<button type="submit" class="btn btn-primary">Send</button>
 							</div>
 						</form>
 					</div>
@@ -132,7 +150,6 @@
 		const modelSelect = document.getElementById("modelSelect");
 		const tempRange = document.getElementById("tempRange");
 		const tempValue = document.getElementById("tempValue");
-		const preferencesForm = document.getElementById("preferencesForm");
 
 		function appendMessage(message) {
 			const bubble = document.createElement("div");
@@ -160,7 +177,11 @@
 			const response = await fetch("/api/chat/{{ .Chat.Summary.ID }}/message", {
 				method: "POST",
 				headers: { "Content-Type": "application/json", "Accept": "application/json" },
-				body: JSON.stringify({ content: content })
+				body: JSON.stringify({
+					content: content,
+					model: modelSelect.value,
+					temperature: tempRange.value
+				})
 			});
 			if (!response.ok) {
 				return;
@@ -175,22 +196,6 @@
 
 		tempRange.addEventListener("input", () => {
 			tempValue.textContent = parseFloat(tempRange.value).toFixed(1);
-		});
-
-		preferencesForm.addEventListener("submit", async (event) => {
-			event.preventDefault();
-			const body = {
-				model: modelSelect.value,
-				temperature: tempRange.value
-			};
-			const response = await fetch("/api/preferences", {
-				method: "POST",
-				headers: { "Content-Type": "application/json", "Accept": "application/json" },
-				body: JSON.stringify(body)
-			});
-			if (!response.ok) {
-				return;
-			}
 		});
 
 		messageArea.scrollTop = messageArea.scrollHeight;

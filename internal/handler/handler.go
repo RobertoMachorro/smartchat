@@ -50,9 +50,10 @@ func (h *Handler) RegisterRoutes(router *gin.Engine) {
 	authed.Use(h.RequireAuth)
 	authed.GET("/", h.ShowChat)
 	authed.GET("/chat/:id", h.ShowChat)
+	authed.POST("/chat/new", h.NewChat)
+	authed.POST("/chat/:id/delete", h.DeleteChat)
 	authed.POST("/chat/:id/message", h.PostMessage)
 	authed.POST("/api/chat/:id/message", h.PostMessage)
-	authed.POST("/api/preferences", h.UpdatePreferences)
 }
 
 func (h *Handler) RequireAuth(c *gin.Context) {
@@ -195,6 +196,34 @@ func (h *Handler) ShowChat(c *gin.Context) {
 	})
 }
 
+func (h *Handler) NewChat(c *gin.Context) {
+	userEmail := h.userEmail(c)
+	summary, err := h.Chat.NewChat(c.Request.Context(), userEmail, "New chat")
+	if err != nil {
+		c.String(http.StatusInternalServerError, "failed to create chat")
+		return
+	}
+	_ = h.setSessionChatID(c, summary.ID)
+	c.Redirect(http.StatusFound, fmt.Sprintf("/chat/%s", summary.ID))
+}
+
+func (h *Handler) DeleteChat(c *gin.Context) {
+	userEmail := h.userEmail(c)
+	chatID := c.Param("id")
+	if chatID == "" {
+		c.String(http.StatusBadRequest, "missing chat")
+		return
+	}
+	if err := h.Chat.DeleteChat(c.Request.Context(), userEmail, chatID); err != nil {
+		c.String(http.StatusBadRequest, "delete failed")
+		return
+	}
+	if currentChatID, ok := h.getSessionChatID(c); ok && currentChatID == chatID {
+		_ = h.setSessionChatID(c, "")
+	}
+	c.Redirect(http.StatusFound, "/")
+}
+
 func (h *Handler) PostMessage(c *gin.Context) {
 	userEmail := h.userEmail(c)
 	chatID := c.Param("id")
@@ -203,18 +232,29 @@ func (h *Handler) PostMessage(c *gin.Context) {
 		return
 	}
 	content := strings.TrimSpace(c.PostForm("content"))
+	model := strings.TrimSpace(c.PostForm("model"))
+	tempValue := strings.TrimSpace(c.PostForm("temperature"))
 	if content == "" {
 		var payload struct {
-			Content string `json:"content"`
+			Content     string `json:"content"`
+			Model       string `json:"model"`
+			Temperature string `json:"temperature"`
 		}
 		if err := c.ShouldBindJSON(&payload); err != nil {
 			c.String(http.StatusBadRequest, "missing message")
 			return
 		}
 		content = strings.TrimSpace(payload.Content)
+		model = strings.TrimSpace(payload.Model)
+		tempValue = strings.TrimSpace(payload.Temperature)
 	}
 	if content == "" {
 		c.String(http.StatusBadRequest, "empty message")
+		return
+	}
+	temperature := parseTemperature(tempValue)
+	if err := h.updateSessionPreferences(c, model, temperature); err != nil {
+		c.String(http.StatusInternalServerError, "session unavailable")
 		return
 	}
 	userMessage, err := h.Chat.AppendMessage(c.Request.Context(), userEmail, chatID, "user", content)
@@ -222,7 +262,7 @@ func (h *Handler) PostMessage(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "failed to save message")
 		return
 	}
-	model, temperature := h.sessionPreferences(c)
+	model, temperature = h.sessionPreferences(c)
 	assistantMessage, usage, err := h.Chat.RunCompletion(c.Request.Context(), userEmail, chatID, model, temperature)
 	if err != nil {
 		c.String(http.StatusBadRequest, "openai error")
@@ -237,46 +277,6 @@ func (h *Handler) PostMessage(c *gin.Context) {
 		return
 	}
 	c.Redirect(http.StatusFound, fmt.Sprintf("/chat/%s", chatID))
-}
-
-func (h *Handler) UpdatePreferences(c *gin.Context) {
-	model := strings.TrimSpace(c.PostForm("model"))
-	tempValue := strings.TrimSpace(c.PostForm("temperature"))
-	if model == "" {
-		var payload struct {
-			Model       string `json:"model"`
-			Temperature string `json:"temperature"`
-		}
-		if err := c.ShouldBindJSON(&payload); err == nil {
-			model = strings.TrimSpace(payload.Model)
-			tempValue = strings.TrimSpace(payload.Temperature)
-		}
-	}
-	temperature, err := strconv.ParseFloat(tempValue, 64)
-	if err != nil {
-		temperature = 0.5
-	}
-	temperature = clampTemperature(temperature)
-
-	model = h.ensureModel(model)
-	session := h.session(c)
-	if session == nil {
-		c.String(http.StatusInternalServerError, "session unavailable")
-		return
-	}
-	if model != "" {
-		session.Values[sessionModel] = model
-	}
-	session.Values[sessionTemperature] = temperature
-	if err := session.Save(c.Request, c.Writer); err != nil {
-		c.String(http.StatusInternalServerError, "session save failed")
-		return
-	}
-	if acceptsJSON(c.Request.Header) {
-		c.JSON(http.StatusOK, gin.H{"model": model, "temperature": temperature})
-		return
-	}
-	c.Redirect(http.StatusFound, "/")
 }
 
 func (h *Handler) session(c *gin.Context) *sessions.Session {
@@ -352,6 +352,17 @@ func clampTemperature(value float64) float64 {
 	return value
 }
 
+func parseTemperature(value string) float64 {
+	if value == "" {
+		return 0.5
+	}
+	temperature, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return 0.5
+	}
+	return clampTemperature(temperature)
+}
+
 func sessionName(instance string) string {
 	clean := strings.TrimSpace(strings.ToLower(instance))
 	if clean == "" {
@@ -385,4 +396,17 @@ func (h *Handler) ensureModel(model string) string {
 		return h.Config.OpenAI.Models[0]
 	}
 	return model
+}
+
+func (h *Handler) updateSessionPreferences(c *gin.Context, model string, temperature float64) error {
+	session := h.session(c)
+	if session == nil {
+		return fmt.Errorf("session unavailable")
+	}
+	model = h.ensureModel(model)
+	if model != "" {
+		session.Values[sessionModel] = model
+	}
+	session.Values[sessionTemperature] = clampTemperature(temperature)
+	return session.Save(c.Request, c.Writer)
 }
